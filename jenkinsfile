@@ -18,9 +18,13 @@ pipeline {
         
         stage('Setup Node.js') {
             steps {
-                sh 'node --version'
-                sh 'npm --version'
-                sh 'npm i -g pnpm'
+                sh '''
+                    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                    sudo apt-get install -y nodejs
+                    node --version
+                    npm --version
+                    npm install -g pnpm
+                '''
             }
         }
         
