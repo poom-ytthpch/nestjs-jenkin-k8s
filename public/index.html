@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NestJS Jenkins K8s - CI/CD Pipeline Monitor</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      @keyframes pulse-green {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0px);
+        }
+        50% {
+          transform: translateY(-10px);
+        }
+      }
+
+      .animate-pulse-green {
+        animation: pulse-green 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+
+      .animate-float {
+        animation: float 3s ease-in-out infinite;
+      }
+
+      .gradient-bg {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+
+      .glass-effect {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .status-card {
+        transition: all 0.3s ease;
+      }
+
+      .status-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      }
+
+      .pipeline-step {
+        position: relative;
+        padding-left: 40px;
+      }
+
+      .pipeline-step::before {
+        content: '';
+        position: absolute;
+        left: 15px;
+        top: 30px;
+        bottom: -20px;
+        width: 2px;
+        background: #e5e7eb;
+      }
+
+      .pipeline-step:last-child::before {
+        display: none;
+      }
+
+      .pipeline-dot {
+        position: absolute;
+        left: 10px;
+        top: 5px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #10b981;
+        border: 2px solid white;
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="gradient-bg text-white shadow-lg">
+      <div class="container mx-auto px-6 py-8">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-4">
+            <div class="animate-float">
+              <i class="fab fa-docker text-4xl"></i>
+            </div>
+            <div>
+              <h1 class="text-3xl font-bold">NestJS Jenkins K8s</h1>
+              <p class="text-purple-100">CI/CD Pipeline Monitor</p>
+            </div>
+          </div>
+          <div class="flex items-center space-x-6">
+            <div class="text-center">
+              <div class="text-2xl font-bold" id="build-number">#42</div>
+              <div class="text-sm text-purple-100">Build</div>
+            </div>
+            <div class="text-center">
+              <div class="flex items-center space-x-2">
+                <div
+                  class="w-3 h-3 bg-green-400 rounded-full animate-pulse-green"
+                ></div>
+                <span class="text-sm">Live</span>
+              </div>
+              <div class="text-xs text-purple-100">Status</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-6 py-8">
+      <div class="status-card bg-white rounded-xl shadow-lg p-6 mb-6">
+        <h3 class="text-lg font-semibold text-gray-800">Current Pod</h3>
+        <p class="text-gray-600 text-sm mt-1" id="pod-name">Loading...</p>
+      </div>
+      <!-- Status Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="status-card bg-white rounded-xl shadow-lg p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="bg-blue-100 p-3 rounded-lg">
+              <i class="fab fa-jenkins text-blue-600 text-xl"></i>
+            </div>
+            <span
+              class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded"
+              >Active</span
+            >
+          </div>
+          <h3 class="text-lg font-semibold text-gray-800">Jenkins</h3>
+          <p class="text-gray-600 text-sm mt-1">Automated Builds</p>
+          <div class="mt-4 flex items-center text-sm text-gray-500">
+            <i class="fas fa-clock mr-2"></i>
+            Last build: 2 mins ago
+          </div>
+        </div>
+
+        <div class="status-card bg-white rounded-xl shadow-lg p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="bg-green-100 p-3 rounded-lg">
+              <i class="fab fa-docker text-green-600 text-xl"></i>
+            </div>
+            <span
+              class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded"
+              >Running</span
+            >
+          </div>
+          <h3 class="text-lg font-semibold text-gray-800">Docker</h3>
+          <p class="text-gray-600 text-sm mt-1">Container Registry</p>
+          <div class="mt-4 flex items-center text-sm text-gray-500">
+            <i class="fas fa-box mr-2"></i>
+            3 images available
+          </div>
+        </div>
+
+        <div class="status-card bg-white rounded-xl shadow-lg p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="bg-purple-100 p-3 rounded-lg">
+              <i class="fas fa-dharmachakra text-purple-600 text-xl"></i>
+            </div>
+            <span
+              class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded"
+              >Healthy</span
+            >
+          </div>
+          <h3 class="text-lg font-semibold text-gray-800">Kubernetes</h3>
+          <p class="text-gray-600 text-sm mt-1">Orchestration</p>
+          <div class="mt-4 flex items-center text-sm text-gray-500">
+            <i class="fas fa-server mr-2"></i>
+            2 pods running
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline Visualization -->
+      <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+        <h2 class="text-xl font-bold text-gray-800 mb-6">Pipeline Flow</h2>
+        <div class="space-y-6">
+          <div class="pipeline-step">
+            <div class="pipeline-dot"></div>
+            <div class="glass-effect rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h4 class="font-semibold text-gray-800">Source Code</h4>
+                  <p class="text-sm text-gray-600">Git repository updated</p>
+                </div>
+                <i class="fab fa-git-alt text-orange-500 text-xl"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="pipeline-step">
+            <div class="pipeline-dot"></div>
+            <div class="glass-effect rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h4 class="font-semibold text-gray-800">Jenkins Build</h4>
+                  <p class="text-sm text-gray-600">
+                    Running tests and compilation
+                  </p>
+                </div>
+                <i class="fab fa-jenkins text-blue-500 text-xl"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="pipeline-step">
+            <div class="pipeline-dot"></div>
+            <div class="glass-effect rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h4 class="font-semibold text-gray-800">Docker Build</h4>
+                  <p class="text-sm text-gray-600">Creating container image</p>
+                </div>
+                <i class="fab fa-docker text-blue-400 text-xl"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="pipeline-step">
+            <div class="pipeline-dot"></div>
+            <div class="glass-effect rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h4 class="font-semibold text-gray-800">Kubernetes Deploy</h4>
+                  <p class="text-sm text-gray-600">Deploying to cluster</p>
+                </div>
+                <i class="fas fa-dharmachakra text-purple-500 text-xl"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Metrics Dashboard -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white rounded-xl shadow-lg p-6">
+          <h3 class="text-lg font-bold text-gray-800 mb-4">Build Statistics</h3>
+          <div class="space-y-4">
+            <div class="flex justify-between items-center">
+              <span class="text-gray-600">Success Rate</span>
+              <span class="font-semibold text-green-600">98.5%</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-gray-600">Average Build Time</span>
+              <span class="font-semibold text-gray-800">3m 24s</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-gray-600">Total Builds</span>
+              <span class="font-semibold text-gray-800">156</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-gray-600">Failed Builds</span>
+              <span class="font-semibold text-red-600">2</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-lg p-6">
+          <h3 class="text-lg font-bold text-gray-800 mb-4">Application Info</h3>
+          <div class="space-y-4">
+            <div class="flex justify-between items-center">
+              <span class="text-gray-600">Framework</span>
+              <span class="font-semibold text-gray-800">NestJS</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-gray-600">Version</span>
+              <span class="font-semibold text-gray-800">0.0.1</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-gray-600">Environment</span>
+              <span class="font-semibold text-blue-600">Production</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-gray-600">Deploy Time</span>
+              <span class="font-semibold text-gray-800">2024-02-13 11:09</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white mt-12 py-6">
+      <div class="container mx-auto px-6 text-center">
+        <p class="text-gray-400">NestJS Jenkins K8s CI/CD Pipeline Monitor</p>
+        <p class="text-sm text-gray-500 mt-2">
+          Automated Build & Deployment System
+        </p>
+      </div>
+    </footer>
+
+    <script>
+      // Simulate real-time updates
+      function updateBuildNumber() {
+        const buildElement = document.getElementById('build-number');
+        const currentBuild = parseInt(
+          buildElement.textContent.replace('#', ''),
+        );
+        buildElement.textContent = `#${currentBuild + 1}`;
+      }
+
+      // Update build number every 30 seconds for demo
+      setInterval(updateBuildNumber, 30000);
+
+      // Add smooth scroll behavior
+      document.querySelectorAll('a[href^="#"]').forEach((anchor) => {
+        anchor.addEventListener('click', function (e) {
+          e.preventDefault();
+          document.querySelector(this.getAttribute('href')).scrollIntoView({
+            behavior: 'smooth',
+          });
+        });
+      });
+
+      // Simulate status updates
+      function simulateStatusUpdate() {
+        const statuses = document.querySelectorAll(
+          '.bg-green-100.text-green-800',
+        );
+        statuses.forEach((status) => {
+          setTimeout(() => {
+            status.style.opacity = '0.5';
+            setTimeout(() => {
+              status.style.opacity = '1';
+            }, 500);
+          }, Math.random() * 2000);
+        });
+      }
+
+      // Run status simulation every 10 seconds
+      setInterval(simulateStatusUpdate, 10000);
+
+      async function loadPodInfo() {
+        try {
+          const res = await fetch('/info');
+          const data = await res.json();
+
+          document.getElementById('pod-name').textContent =
+            `${data.pod} (v${data.version})`;
+        } catch (err) {
+          document.getElementById('pod-name').textContent = 'Error';
+        }
+      }
+
+      loadPodInfo();
+
+      // refresh ทุก 5 วิ
+      setInterval(loadPodInfo, 5000);
+    </script>
+  </body>
+</html>
