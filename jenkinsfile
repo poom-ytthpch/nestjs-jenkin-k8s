@@ -19,18 +19,15 @@ pipeline {
         stage('Setup Node.js') {
             steps {
                 sh '''
-                    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                    sudo apt-get install -y nodejs
                     node --version
                     npm --version
-                    npm install -g pnpm
                 '''
             }
         }
         
         stage('Install Dependencies') {
             steps {
-                sh 'pnpm install'
+                sh 'npm install'
             }
         }
         
@@ -42,7 +39,7 @@ pipeline {
         
         stage('Build Application') {
             steps {
-                sh 'pnpm run build'
+                sh 'npm run build'
             }
         }
         
@@ -52,12 +49,11 @@ pipeline {
                   string(credentialsId: 'nestjs-jenkin-k8s-env', variable: 'ENV_FILE')
                 ]) {
                   sh '''
-                    echo "$ENV_FILE"
+                    echo "=== ENV FILE CONTENT ==="
+                    echo "$ENV_FILE" | base64 -d
                     echo ""
-                    echo "===================="
-                    echo "ENV FILE CONTENT END"
-                    echo "===================="
-                    echo "$ENV_FILE" > .env
+                    echo "=== END ENV FILE ==="
+                    echo "$ENV_FILE" | base64 -d > .env
 
                     kubectl delete configmap nestjs-jenkin-k8s-env \
                       --namespace=$K8S_NAMESPACE \
