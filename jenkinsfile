@@ -71,18 +71,17 @@ pipeline {
                   file(credentialsId: 'k8s-config', variable: 'KUBE_CONFIG')
                 ]) {
                   sh '''
-                    export KUBECONFIG="$KUBE_CONFIG"
                     echo "=== ENV FILE CONTENT ==="
                     echo "$ENV_FILE"
                     echo ""
                     echo "=== END ENV FILE ==="
                     echo "$ENV_FILE" > .env
 
-                    kubectl delete configmap nestjs-jenkin-k8s-env \
+                    kubectl --kubeconfig="$KUBE_CONFIG" delete configmap nestjs-jenkin-k8s-env \
                       --namespace=$K8S_NAMESPACE \
                       --ignore-not-found
 
-                    kubectl create configmap nestjs-jenkin-k8s-env \
+                    kubectl --kubeconfig="$KUBE_CONFIG" create configmap nestjs-jenkin-k8s-env \
                       --from-env-file=.env \
                       --namespace=$K8S_NAMESPACE
                   '''
@@ -122,16 +121,15 @@ pipeline {
                 ]) {
                     script {
                         sh '''
-                            export KUBECONFIG="$KUBECONFIG"
                             # อัปเดต image version ใน deployment.yaml
                             sed -i 's|image: ytthpch/nestjs-jenkin-k8s:.*|image: '${DOCKER_IMAGE}':'${DOCKER_TAG}'|g' k8s/deployment.yaml
                             
                             # ใช้ kubectl ในการ deploy
-                            kubectl apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
-                            kubectl apply -f k8s/service.yaml -n ${K8S_NAMESPACE}
+                            kubectl --kubeconfig="$KUBECONFIG" apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
+                            kubectl --kubeconfig="$KUBECONFIG" apply -f k8s/service.yaml -n ${K8S_NAMESPACE}
                             
                             # รอให้ deployment พร้อม
-                            kubectl rollout status deployment/${K8S_DEPLOYMENT_NAME} -n ${K8S_NAMESPACE}
+                            kubectl --kubeconfig="$KUBECONFIG" rollout status deployment/${K8S_DEPLOYMENT_NAME} -n ${K8S_NAMESPACE}
                         '''
                     }
                 }
