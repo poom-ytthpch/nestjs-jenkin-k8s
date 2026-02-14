@@ -71,10 +71,10 @@ pipeline {
                 ]) {
                   sh '''
                     echo "=== ENV FILE CONTENT ==="
-                    echo "$ENV_FILE" | base64 -d
+                    echo "$ENV_FILE"
                     echo ""
                     echo "=== END ENV FILE ==="
-                    echo "$ENV_FILE" | base64 -d > .env
+                    echo "$ENV_FILE" > .env
 
                     kubectl delete configmap nestjs-jenkin-k8s-env \
                       --namespace=$K8S_NAMESPACE \
