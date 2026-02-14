@@ -118,11 +118,11 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 withCredentials([
-                  file(credentialsId: 'k8s-config', variable: 'KUBE_CONFIG')
+                  file(credentialsId: 'k8s-config', variable: 'KUBECONFIG')
                 ]) {
                     script {
                         sh '''
-                            export KUBECONFIG="$KUBE_CONFIG"
+                            export KUBECONFIG="$KUBECONFIG"
                             # อัปเดต image version ใน deployment.yaml
                             sed -i 's|image: ytthpch/nestjs-jenkin-k8s:.*|image: '${DOCKER_IMAGE}':'${DOCKER_TAG}'|g' k8s/deployment.yaml
                             
