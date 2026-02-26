@@ -13,6 +13,9 @@ spec:
     command:
     - cat
     tty: true
+    volumeMounts:
+    - name: workspace
+      mountPath: /home/jenkins/agent
 
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
@@ -20,17 +23,23 @@ spec:
     - --sleep
     - "999999"
     volumeMounts:
-
-  - name: docker-config
-    mountPath: /kaniko/.docke
+    - name: workspace
+      mountPath: /home/jenkins/agent
+    - name: docker-config
+      mountPath: /kaniko/.docker
 
   - name: kubectl
     image: bitnami/kubectl:latest
     command:
     - cat
     tty: true
+    volumeMounts:
+    - name: workspace
+      mountPath: /home/jenkins/agent
 
   volumes:
+  - name: workspace
+    emptyDir: {}
   - name: docker-config
     emptyDir: {}
 """
