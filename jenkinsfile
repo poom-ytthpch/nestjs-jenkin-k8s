@@ -17,16 +17,16 @@ spec:
     - name: workspace
       mountPath: /home/jenkins/agent
 
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    args:
-    - --sleep
-    - "999999"
+  - name: docker
+    image: docker:24-dind
+    command:
+    - cat
+    tty: true
     volumeMounts:
     - name: workspace
       mountPath: /home/jenkins/agent
-    - name: docker-config
-      mountPath: /kaniko/.docker
+    - name: docker-socket
+      mountPath: /var/run/docker.sock
 
   - name: kubectl
     image: bitnami/kubectl:latest
@@ -40,8 +40,9 @@ spec:
   volumes:
   - name: workspace
     emptyDir: {}
-  - name: docker-config
-    emptyDir: {}
+  - name: docker-socket
+    hostPath:
+      path: /var/run/docker.sock
 """
     }
   }
@@ -77,11 +78,11 @@ spec:
     }
 
     // ---------------------------
-    stage('Build & Push Image (Kaniko)') {
+    stage('Build & Push Image (Docker)') {
 
       steps {
 
-        container('kaniko') {
+        container('docker') {
 
           withCredentials([
             usernamePassword(
@@ -92,23 +93,16 @@ spec:
           ]) {
 
             sh '''
-              mkdir -p /kaniko/.docker
+              echo "=== Building Docker image ==="
+              docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
 
-              cat <<EOF > /kaniko/.docker/config.json
-              {
-                "auths": {
-                  "https://index.docker.io/v1/": {
-                    "username": "$DOCKER_USER",
-                    "password": "$DOCKER_PASS"
-                  }
-                }
-              }
-              EOF
+              echo "=== Logging into Docker Hub ==="
+              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-              /kaniko/executor \
-                --context=${WORKSPACE} \
-                --dockerfile=${WORKSPACE}/Dockerfile \
-                --destination=${DOCKER_IMAGE}:${DOCKER_TAG}
+              echo "=== Pushing Docker image ==="
+              docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+
+              echo "=== Docker push completed ==="
             '''
           }
         }
@@ -116,7 +110,7 @@ spec:
     }
 
     // ---------------------------
-    stage('Create ConfigMap') {
+    stage('Kubernetes Deploy') {
 
       steps {
 
@@ -128,44 +122,39 @@ spec:
           ]) {
 
             sh '''
+              echo "=== Echo .env file from nestjs-jenkin-k8s-env secret ==="
+              echo "$ENV_FILE"
+              echo ""
+
+              echo "=== Creating .env file ==="
               echo "$ENV_FILE" > .env
+              cat .env
+              echo ""
 
               export KUBECONFIG=$KUBECONFIG
 
+              echo "=== Deleting existing configmap ==="
               kubectl delete configmap nestjs-jenkin-k8s-env \
                 -n ${K8S_NAMESPACE} \
                 --ignore-not-found
 
+              echo "=== Creating new configmap from .env file ==="
               kubectl create configmap nestjs-jenkin-k8s-env \
                 --from-env-file=.env \
                 -n ${K8S_NAMESPACE}
-            '''
-          }
-        }
-      }
-    }
 
-    // ---------------------------
-    stage('Deploy') {
-
-      steps {
-
-        container('kubectl') {
-
-          withCredentials([
-            file(credentialsId: 'k8s-config', variable: 'KUBECONFIG')
-          ]) {
-
-            sh '''
-              export KUBECONFIG=$KUBECONFIG
-
+              echo "=== Updating deployment image ==="
               sed -i "s|image: .*|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" k8s/deployment.yaml
 
+              echo "=== Applying Kubernetes manifests ==="
               kubectl apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
               kubectl apply -f k8s/service.yaml -n ${K8S_NAMESPACE}
 
+              echo "=== Waiting for deployment rollout ==="
               kubectl rollout status deployment/${K8S_DEPLOYMENT_NAME} \
                 -n ${K8S_NAMESPACE}
+
+              echo "=== Deployment completed successfully ==="
             '''
           }
         }
