@@ -2,6 +2,10 @@ pipeline {
 
   agent any
 
+  tools {
+    nodejs 'Node 20.x'
+  }
+
   environment {
     DOCKER_IMAGE = 'ytthpch/nestjs-jenkin-k8s'
     DOCKER_TAG   = '1.5'
@@ -23,15 +27,13 @@ pipeline {
     // ---------------------------
     stage('Install & Build') {
       steps {
-        nodejs(nodeJSInstallationName: 'Node 20.x') {
-          sh '''
-            echo "=== Installing dependencies ==="
-            npm install
-            
-            echo "=== Building application ==="
-            npm run build
-          '''
-        }
+        sh '''
+          echo "=== Installing dependencies ==="
+          npm install
+          
+          echo "=== Building application ==="
+          npm run build
+        '''
       }
     }
 
