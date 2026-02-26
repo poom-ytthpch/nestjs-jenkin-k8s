@@ -1,55 +1,10 @@
 pipeline {
 
-  agent {
-    kubernetes {
-      yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-
-  - name: node
-    image: node:20
-    command:
-    - cat
-    tty: true
-    volumeMounts:
-    - name: workspace
-      mountPath: /home/jenkins/agent
-
-  - name: docker
-    image: docker:24-dind
-    command:
-    - cat
-    tty: true
-    volumeMounts:
-    - name: workspace
-      mountPath: /home/jenkins/agent
-    - name: docker-socket
-      mountPath: /var/run/docker.sock
-
-  - name: kubectl
-    image: bitnami/kubectl:latest
-    command:
-    - cat
-    tty: true
-    volumeMounts:
-    - name: workspace
-      mountPath: /home/jenkins/agent
-
-  volumes:
-  - name: workspace
-    emptyDir: {}
-  - name: docker-socket
-    hostPath:
-      path: /var/run/docker.sock
-"""
-    }
-  }
+  agent any
 
   environment {
     DOCKER_IMAGE = 'ytthpch/nestjs-jenkin-k8s'
-    DOCKER_TAG   = '1.4'
+    DOCKER_TAG   = '1.5'
 
     K8S_NAMESPACE = 'default'
     K8S_DEPLOYMENT_NAME = 'nestjs-jenkin-k8s-app'
