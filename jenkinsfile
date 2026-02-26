@@ -16,12 +16,13 @@ spec:
 
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    command:
-    - cat
-    tty: true
+    args:
+    - --sleep
+    - "999999"
     volumeMounts:
-    - name: docker-config
-      mountPath: /kaniko/.docker
+
+  - name: docker-config
+    mountPath: /kaniko/.docke
 
   - name: kubectl
     image: bitnami/kubectl:latest
