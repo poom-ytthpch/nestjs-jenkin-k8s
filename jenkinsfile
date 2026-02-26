@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'docker:24-dind'
-            args '--privileged'
-        }
-    }
+    agent any
     
     environment {
         DOCKER_IMAGE = 'ytthpch/nestjs-jenkin-k8s'
@@ -18,10 +13,38 @@ pipeline {
         stage('Setup Tools') {
             steps {
                 sh '''
-                    # Install Node.js and other required tools
-                    apk add --no-cache nodejs npm curl git
+                    # Check OS and install tools accordingly
+                    if command -v apt-get &> /dev/null; then
+                        # Ubuntu/Debian
+                        sudo apt-get update
+                        sudo apt-get install -y curl git
+                        # Install Node.js 20
+                        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                        sudo apt-get install -y nodejs
+                    elif command -v yum &> /dev/null; then
+                        # CentOS/RHEL
+                        sudo yum install -y curl git
+                        # Install Node.js 20
+                        curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+                        sudo yum install -y nodejs
+                    elif command -v apk &> /dev/null; then
+                        # Alpine
+                        sudo apk add --no-cache nodejs npm curl git
+                    else
+                        echo "Unsupported package manager"
+                        exit 1
+                    fi
+                    
                     node --version
                     npm --version
+                    
+                    # Check if Docker is available
+                    if ! command -v docker &> /dev/null; then
+                        echo "Docker is not installed or not in PATH"
+                        echo "Please ensure Docker is installed on the Jenkins agent"
+                        exit 1
+                    fi
+                    
                     docker --version
                 '''
             }
@@ -74,9 +97,29 @@ pipeline {
                     echo "$ENV_FILE" > .env
 
                     # Install kubectl
-                    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                    chmod +x kubectl
-                    mv kubectl /usr/local/bin/
+                    if command -v apt-get &> /dev/null; then
+                        # Ubuntu/Debian
+                        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+                        echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+                        sudo apt-get update
+                        sudo apt-get install -y kubectl
+                    elif command -v yum &> /dev/null; then
+                        # CentOS/RHEL
+                        cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
+EOF
+                        sudo yum install -y kubectl
+                    else
+                        # Direct download for other systems
+                        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                        chmod +x kubectl
+                        sudo mv kubectl /usr/local/bin/
+                    fi
 
                     kubectl --kubeconfig="$KUBE_CONFIG" delete configmap nestjs-jenkin-k8s-env \\
                       --namespace=$K8S_NAMESPACE \\
@@ -124,9 +167,29 @@ pipeline {
                         sh '''
                             # Install kubectl if not already installed
                             if ! command -v kubectl &> /dev/null; then
-                                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                                chmod +x kubectl
-                                mv kubectl /usr/local/bin/
+                                if command -v apt-get &> /dev/null; then
+                                    # Ubuntu/Debian
+                                    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+                                    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+                                    sudo apt-get update
+                                    sudo apt-get install -y kubectl
+                                elif command -v yum &> /dev/null; then
+                                    # CentOS/RHEL
+                                    cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
+EOF
+                                    sudo yum install -y kubectl
+                                else
+                                    # Direct download for other systems
+                                    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                                    chmod +x kubectl
+                                    sudo mv kubectl /usr/local/bin/
+                                fi
                             fi
                             
                             # อัปเดต image version ใน deployment.yaml
