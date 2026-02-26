@@ -1,6 +1,11 @@
 pipeline {
-    agent any
-
+   agent {
+        docker {
+            image 'node:20'
+            args '-u root:root'
+        }
+    }
+    
     environment {
         DOCKER_IMAGE = "ytthpch/nestjs-jenkin-k8s"
         DOCKER_TAG   = "${BUILD_NUMBER}"
