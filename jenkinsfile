@@ -23,10 +23,15 @@ pipeline {
     // ---------------------------
     stage('Install & Build') {
       steps {
-          sh '''
-            npm install
-            npm run build
-          '''
+        sh '''
+          echo "=== Installing Node.js ==="
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y nodejs
+
+          echo "=== Installing dependencies and building ==="
+          npm install
+          npm run build
+        '''
       }
     }
 
@@ -35,29 +40,29 @@ pipeline {
 
       steps {
 
-        container('docker') {
+        withCredentials([
+          usernamePassword(
+            credentialsId: 'docker-hub-credentials',
+            usernameVariable: 'DOCKER_USER',
+            passwordVariable: 'DOCKER_PASS'
+          )
+        ]) {
 
-          withCredentials([
-            usernamePassword(
-              credentialsId: 'docker-hub-credentials',
-              usernameVariable: 'DOCKER_USER',
-              passwordVariable: 'DOCKER_PASS'
-            )
-          ]) {
+          sh '''
+            echo "=== Installing Docker ==="
+            curl -fsSL https://get.docker.com | sh
 
-            sh '''
-              echo "=== Building Docker image ==="
-              docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+            echo "=== Building Docker image ==="
+            docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
 
-              echo "=== Logging into Docker Hub ==="
-              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            echo "=== Logging into Docker Hub ==="
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-              echo "=== Pushing Docker image ==="
-              docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+            echo "=== Pushing Docker image ==="
+            docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
 
-              echo "=== Docker push completed ==="
-            '''
-          }
+            echo "=== Docker push completed ==="
+          '''
         }
       }
     }
@@ -67,49 +72,51 @@ pipeline {
 
       steps {
 
-        container('kubectl') {
+        withCredentials([
+          string(credentialsId: 'nestjs-jenkin-k8s-env', variable: 'ENV_FILE'),
+          file(credentialsId: 'k8s-config', variable: 'KUBECONFIG')
+        ]) {
 
-          withCredentials([
-            string(credentialsId: 'nestjs-jenkin-k8s-env', variable: 'ENV_FILE'),
-            file(credentialsId: 'k8s-config', variable: 'KUBECONFIG')
-          ]) {
+          sh '''
+            echo "=== Installing kubectl ==="
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl
+            sudo mv kubectl /usr/local/bin/
 
-            sh '''
-              echo "=== Echo .env file from nestjs-jenkin-k8s-env secret ==="
-              echo "$ENV_FILE"
-              echo ""
+            echo "=== Echo .env file from nestjs-jenkin-k8s-env secret ==="
+            echo "$ENV_FILE"
+            echo ""
 
-              echo "=== Creating .env file ==="
-              echo "$ENV_FILE" > .env
-              cat .env
-              echo ""
+            echo "=== Creating .env file ==="
+            echo "$ENV_FILE" > .env
+            cat .env
+            echo ""
 
-              export KUBECONFIG=$KUBECONFIG
+            export KUBECONFIG=$KUBECONFIG
 
-              echo "=== Deleting existing configmap ==="
-              kubectl delete configmap nestjs-jenkin-k8s-env \
-                -n ${K8S_NAMESPACE} \
-                --ignore-not-found
+            echo "=== Deleting existing configmap ==="
+            kubectl delete configmap nestjs-jenkin-k8s-env \
+              -n ${K8S_NAMESPACE} \
+              --ignore-not-found
 
-              echo "=== Creating new configmap from .env file ==="
-              kubectl create configmap nestjs-jenkin-k8s-env \
-                --from-env-file=.env \
-                -n ${K8S_NAMESPACE}
+            echo "=== Creating new configmap from .env file ==="
+            kubectl create configmap nestjs-jenkin-k8s-env \
+              --from-env-file=.env \
+              -n ${K8S_NAMESPACE}
 
-              echo "=== Updating deployment image ==="
-              sed -i "s|image: .*|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" k8s/deployment.yaml
+            echo "=== Updating deployment image ==="
+            sed -i "s|image: .*|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" k8s/deployment.yaml
 
-              echo "=== Applying Kubernetes manifests ==="
-              kubectl apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
-              kubectl apply -f k8s/service.yaml -n ${K8S_NAMESPACE}
+            echo "=== Applying Kubernetes manifests ==="
+            kubectl apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
+            kubectl apply -f k8s/service.yaml -n ${K8S_NAMESPACE}
 
-              echo "=== Waiting for deployment rollout ==="
-              kubectl rollout status deployment/${K8S_DEPLOYMENT_NAME} \
-                -n ${K8S_NAMESPACE}
+            echo "=== Waiting for deployment rollout ==="
+            kubectl rollout status deployment/${K8S_DEPLOYMENT_NAME} \
+              -n ${K8S_NAMESPACE}
 
-              echo "=== Deployment completed successfully ==="
-            '''
-          }
+            echo "=== Deployment completed successfully ==="
+          '''
         }
       }
     }
