@@ -23,11 +23,15 @@ pipeline {
     // ---------------------------
     stage('Install & Build') {
       steps {
-         nodejs(nodeJSInstallationName: 'Node 20.x', configId: 'nodejs-config') {
-                    sh 'npm config ls'
-                    sh 'npm install'
-                    sh 'npm run build'
-            }
+        nodejs(nodeJSInstallationName: 'Node 20.x') {
+          sh '''
+            echo "=== Installing dependencies ==="
+            npm install
+            
+            echo "=== Building application ==="
+            npm run build
+          '''
+        }
       }
     }
 
