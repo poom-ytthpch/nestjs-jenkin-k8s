@@ -1,9 +1,34 @@
 pipeline {
 
-  agent any
+  agent {
+    kubernetes {
+      yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
 
-  tools {
-    nodejs 'Node 20.x'
+  - name: node
+    image: node:20-alpine
+    command:
+    - cat
+    tty: true
+
+  - name: docker
+    image: docker:26-cli
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+      - name: docker-sock
+        mountPath: /var/run/docker.sock
+
+  volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+"""
+    }
   }
 
   environment {
@@ -19,49 +44,57 @@ pipeline {
     // ---------------------------
     stage('Checkout') {
       steps {
-        git branch: 'main',
-            url: 'https://github.com/poom-ytthpch/nestjs-jenkin-k8s.git'
+        container('node') {
+          git branch: 'main',
+              url: 'https://github.com/poom-ytthpch/nestjs-jenkin-k8s.git'
+        }
       }
     }
 
     // ---------------------------
     stage('Install & Build') {
       steps {
-        sh '''
-          echo "=== Installing dependencies ==="
-          npm install
-          
-          echo "=== Building application ==="
-          npm run build
-        '''
+        container('node') {
+          sh '''
+            node -v
+            npm -v
+
+            echo "=== Installing dependencies ==="
+            npm install
+
+            echo "=== Building application ==="
+            npm run build
+          '''
+        }
       }
     }
 
     // ---------------------------
-    stage('Build & Push Image (Docker)') {
+    stage('Build & Push Image') {
 
       steps {
 
-        withCredentials([
-          usernamePassword(
-            credentialsId: 'docker-hub-credentials',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_PASS'
-          )
-        ]) {
+        container('docker') {
 
-          sh '''
-            echo "=== Building Docker image ==="
+          withCredentials([
+            usernamePassword(
+              credentialsId: 'docker-hub-credentials',
+              usernameVariable: 'DOCKER_USER',
+              passwordVariable: 'DOCKER_PASS'
+            )
+          ]) {
+
+            sh '''
+              echo "=== Docker Build ==="
               docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-              
-              echo "=== Logging into Docker Hub ==="
+
+              echo "=== Docker Login ==="
               echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-              
-              echo "=== Pushing Docker image ==="
+
+              echo "=== Docker Push ==="
               docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
-              
-              echo "=== Docker push completed ==="
-          '''
+            '''
+          }
         }
       }
     }
@@ -71,55 +104,41 @@ pipeline {
 
       steps {
 
-        withCredentials([
-          string(credentialsId: 'nestjs-jenkin-k8s-env', variable: 'ENV_FILE'),
-          file(credentialsId: 'k8s-config', variable: 'KUBECONFIG')
-        ]) {
+        container('node') {
 
-          sh '''
-            echo "=== Installing kubectl (user mode) ==="
-            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-            chmod +x kubectl
-            export PATH=$PWD:$PATH
+          withCredentials([
+            string(credentialsId: 'nestjs-jenkin-k8s-env', variable: 'ENV_FILE'),
+            file(credentialsId: 'k8s-config', variable: 'KUBECONFIG')
+          ]) {
 
-            echo "=== Echo .env file from nestjs-jenkin-k8s-env secret ==="
-            echo "$ENV_FILE"
-            echo ""
+            sh '''
+              echo "=== Install kubectl ==="
+              curl -LO https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
+              chmod +x kubectl
+              mv kubectl /usr/local/bin/
 
-            echo "=== Creating .env file ==="
-            echo "$ENV_FILE" > .env
-            cat .env
-            echo ""
+              export KUBECONFIG=$KUBECONFIG
 
-            export KUBECONFIG=$KUBECONFIG
+              echo "=== Create .env ==="
+              echo "$ENV_FILE" > .env
 
-            if command -v kubectl >/dev/null 2>&1; then
-              echo "=== Deleting existing configmap ==="
               kubectl delete configmap nestjs-jenkin-k8s-env \
                 -n ${K8S_NAMESPACE} \
                 --ignore-not-found
 
-              echo "=== Creating new configmap from .env file ==="
               kubectl create configmap nestjs-jenkin-k8s-env \
                 --from-env-file=.env \
                 -n ${K8S_NAMESPACE}
 
-              echo "=== Updating deployment image ==="
               sed -i "s|image: .*|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" k8s/deployment.yaml
 
-              echo "=== Applying Kubernetes manifests ==="
               kubectl apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
               kubectl apply -f k8s/service.yaml -n ${K8S_NAMESPACE}
 
-              echo "=== Waiting for deployment rollout ==="
               kubectl rollout status deployment/${K8S_DEPLOYMENT_NAME} \
                 -n ${K8S_NAMESPACE}
-
-              echo "=== Deployment completed successfully ==="
-            else
-              echo "=== kubectl not available, skipping deployment ==="
-            fi
-          '''
+            '''
+          }
         }
       }
     }
