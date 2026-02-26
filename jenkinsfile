@@ -13,31 +13,6 @@ pipeline {
         stage('Setup Tools') {
             steps {
                 sh '''
-                    # Check OS and install tools accordingly
-                    if command -v apt-get &> /dev/null; then
-                        # Ubuntu/Debian
-                        sudo apt-get update
-                        sudo apt-get install -y curl git
-                        # Install Node.js 20
-                        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                        sudo apt-get install -y nodejs
-                    elif command -v yum &> /dev/null; then
-                        # CentOS/RHEL
-                        sudo yum install -y curl git
-                        # Install Node.js 20
-                        curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-                        sudo yum install -y nodejs
-                    elif command -v apk &> /dev/null; then
-                        # Alpine
-                        sudo apk add --no-cache nodejs npm curl git
-                    else
-                        echo "Unsupported package manager"
-                        exit 1
-                    fi
-                    
-                    node --version
-                    npm --version
-                    
                     # Check if Docker is available
                     if ! command -v docker &> /dev/null; then
                         echo "Docker is not installed or not in PATH"
@@ -59,7 +34,7 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 sh '''
-                    npm install
+                    docker run --rm -v ${WORKSPACE}:/app -w /app node:20 npm install
                 '''
             }
         }
@@ -78,7 +53,7 @@ pipeline {
         stage('Build Application') {
             steps {
                 sh '''
-                    npm run build
+                    docker run --rm -v ${WORKSPACE}:/app -w /app node:20 npm run build
                 '''
             }
         }
@@ -96,37 +71,18 @@ pipeline {
                     echo "=== END ENV FILE ==="
                     echo "$ENV_FILE" > .env
 
-                    # Install kubectl
-                    if command -v apt-get &> /dev/null; then
-                        # Ubuntu/Debian
-                        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-                        echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-                        sudo apt-get update
-                        sudo apt-get install -y kubectl
-                    elif command -v yum &> /dev/null; then
-                        # CentOS/RHEL
-                        cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
-[kubernetes]
-name=Kubernetes
-baseurl=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/
-enabled=1
-gpgcheck=1
-gpgkey=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
-EOF
-                        sudo yum install -y kubectl
-                    else
-                        # Direct download for other systems
-                        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                        chmod +x kubectl
-                        sudo mv kubectl /usr/local/bin/
-                    fi
-
-                    kubectl --kubeconfig="$KUBE_CONFIG" delete configmap nestjs-jenkin-k8s-env \\
+                    docker run --rm -v ${WORKSPACE}:/workspace -v ${KUBE_CONFIG}:/config/.kube/config \\
+                      bitnami/kubectl:latest \\
+                      --kubeconfig=/config/.kube/config \\
+                      delete configmap nestjs-jenkin-k8s-env \\
                       --namespace=$K8S_NAMESPACE \\
                       --ignore-not-found
 
-                    kubectl --kubeconfig="$KUBE_CONFIG" create configmap nestjs-jenkin-k8s-env \\
-                      --from-env-file=.env \\
+                    docker run --rm -v ${WORKSPACE}:/workspace -v ${KUBE_CONFIG}:/config/.kube/config \\
+                      bitnami/kubectl:latest \\
+                      --kubeconfig=/config/.kube/config \\
+                      create configmap nestjs-jenkin-k8s-env \\
+                      --from-env-file=/workspace/.env \\
                       --namespace=$K8S_NAMESPACE
                   '''
                 }
@@ -165,42 +121,25 @@ EOF
                 ]) {
                     script {
                         sh '''
-                            # Install kubectl if not already installed
-                            if ! command -v kubectl &> /dev/null; then
-                                if command -v apt-get &> /dev/null; then
-                                    # Ubuntu/Debian
-                                    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-                                    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-                                    sudo apt-get update
-                                    sudo apt-get install -y kubectl
-                                elif command -v yum &> /dev/null; then
-                                    # CentOS/RHEL
-                                    cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
-[kubernetes]
-name=Kubernetes
-baseurl=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/
-enabled=1
-gpgcheck=1
-gpgkey=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
-EOF
-                                    sudo yum install -y kubectl
-                                else
-                                    # Direct download for other systems
-                                    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                                    chmod +x kubectl
-                                    sudo mv kubectl /usr/local/bin/
-                                fi
-                            fi
-                            
                             # อัปเดต image version ใน deployment.yaml
                             sed -i 's|image: ytthpch/nestjs-jenkin-k8s:.*|image: '${DOCKER_IMAGE}':'${DOCKER_TAG}'|g' k8s/deployment.yaml
                             
                             # ใช้ kubectl ในการ deploy
-                            kubectl --kubeconfig="$KUBECONFIG" apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
-                            kubectl --kubeconfig="$KUBECONFIG" apply -f k8s/service.yaml -n ${K8S_NAMESPACE}
+                            docker run --rm -v ${WORKSPACE}:/workspace -v ${KUBECONFIG}:/config/.kube/config \\
+                              bitnami/kubectl:latest \\
+                              --kubeconfig=/config/.kube/config \\
+                              apply -f /workspace/k8s/deployment.yaml -n ${K8S_NAMESPACE}
+                              
+                            docker run --rm -v ${WORKSPACE}:/workspace -v ${KUBECONFIG}:/config/.kube/config \\
+                              bitnami/kubectl:latest \\
+                              --kubeconfig=/config/.kube/config \\
+                              apply -f /workspace/k8s/service.yaml -n ${K8S_NAMESPACE}
                             
                             # รอให้ deployment พร้อม
-                            kubectl --kubeconfig="$KUBECONFIG" rollout status deployment/${K8S_DEPLOYMENT_NAME} -n ${K8S_NAMESPACE}
+                            docker run --rm -v ${WORKSPACE}:/workspace -v ${KUBECONFIG}:/config/.kube/config \\
+                              bitnami/kubectl:latest \\
+                              --kubeconfig=/config/.kube/config \\
+                              rollout status deployment/${K8S_DEPLOYMENT_NAME} -n ${K8S_NAMESPACE}
                         '''
                     }
                 }
