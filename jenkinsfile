@@ -1,148 +1,120 @@
 pipeline {
-    agent any
-    
+    agent {
+        docker {
+            image 'node:20-alpine'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
+
     environment {
         DOCKER_IMAGE = 'ytthpch/nestjs-jenkin-k8s'
-        DOCKER_TAG = '1.4'
+        DOCKER_TAG = "${BUILD_NUMBER}"
         K8S_NAMESPACE = 'default'
-        K8S_DEPLOYMENT_NAME = 'nestjs-jenkin-k8s-app'
-        K8S_SERVICE_NAME = 'nestjs-jenkin-k8s-service'
+        K8S_DEPLOYMENT = 'nestjs-jenkin-k8s-app'
     }
-    
+
     stages {
+
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/poom-ytthpch/nestjs-jenkin-k8s.git'
+                git branch: 'main',
+                    url: 'https://github.com/poom-ytthpch/nestjs-jenkin-k8s.git'
             }
         }
-        
-        stage('Setup Node.js') {
-            steps {
-                sh '''
-                    # Install Node.js 20 using nvm (no sudo required)
-                    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-                    export NVM_DIR="$HOME/.nvm"
-                    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                    nvm install 20
-                    nvm use 20
-                    node --version
-                    npm --version
-                '''
-            }
-        }
-        
+
         stage('Install Dependencies') {
             steps {
                 sh '''
-                    export NVM_DIR="$HOME/.nvm"
-                    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                    nvm use 20
-                    npm install
+                  npm ci
                 '''
             }
         }
-        
-        // stage('Run Tests') {
-        //     steps {
-        //         sh '''
-        //             export NVM_DIR="$HOME/.nvm"
-        //             [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-        //             nvm use 20
-        //             npm run test
-        //         '''
-        //     }
-        // }
-        
-        stage('Build Application') {
+
+        stage('Build') {
             steps {
                 sh '''
-                    export NVM_DIR="$HOME/.nvm"
-                    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                    nvm use 20
-                    npm run build
+                  npm run build
                 '''
             }
         }
-        
-        stage('Create Env ConfigMap') {
+
+        stage('Create ConfigMap') {
             steps {
                 withCredentials([
-                  string(credentialsId: 'nestjs-jenkin-k8s-env', variable: 'ENV_FILE'),
-                  file(credentialsId: 'k8s-config', variable: 'KUBE_CONFIG')
+                    string(credentialsId: 'nestjs-jenkin-k8s-env', variable: 'ENV_FILE'),
+                    file(credentialsId: 'k8s-config', variable: 'KUBECONFIG')
                 ]) {
-                  sh '''
-                    echo "=== ENV FILE CONTENT ==="
-                    echo "$ENV_FILE"
-                    echo ""
-                    echo "=== END ENV FILE ==="
-                    echo "$ENV_FILE" > .env
 
-                    kubectl --kubeconfig="$KUBE_CONFIG" delete configmap nestjs-jenkin-k8s-env \
-                      --namespace=$K8S_NAMESPACE \
-                      --ignore-not-found
-
-                    kubectl --kubeconfig="$KUBE_CONFIG" create configmap nestjs-jenkin-k8s-env \
-                      --from-env-file=.env \
-                      --namespace=$K8S_NAMESPACE
-                  '''
-                }
-            }
-        }
-        
-        stage('Build Docker Image') {
-            steps {
-                sh '''
-                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                '''
-            }
-        }
-        
-        stage('Push Docker Image') {
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'docker-hub-credentials',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )
-                ]) {
                     sh '''
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                      echo "$ENV_FILE" > .env
+
+                      kubectl --kubeconfig=$KUBECONFIG delete configmap app-env \
+                        -n $K8S_NAMESPACE --ignore-not-found
+
+                      kubectl --kubeconfig=$KUBECONFIG create configmap app-env \
+                        --from-env-file=.env \
+                        -n $K8S_NAMESPACE
                     '''
                 }
             }
         }
-        
-        stage('Deploy to Kubernetes') {
+
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                  docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+                  docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
+                '''
+            }
+        }
+
+        stage('Push Image') {
             steps {
                 withCredentials([
-                  file(credentialsId: 'k8s-config', variable: 'KUBECONFIG')
+                    usernamePassword(
+                        credentialsId: 'docker-hub-credentials',
+                        usernameVariable: 'USER',
+                        passwordVariable: 'PASS'
+                    )
                 ]) {
-                    script {
-                        sh '''
-                            # อัปเดต image version ใน deployment.yaml
-                            sed -i 's|image: ytthpch/nestjs-jenkin-k8s:.*|image: '${DOCKER_IMAGE}':'${DOCKER_TAG}'|g' k8s/deployment.yaml
-                            
-                            # ใช้ kubectl ในการ deploy
-                            kubectl --kubeconfig="$KUBECONFIG" apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
-                            kubectl --kubeconfig="$KUBECONFIG" apply -f k8s/service.yaml -n ${K8S_NAMESPACE}
-                            
-                            # รอให้ deployment พร้อม
-                            kubectl --kubeconfig="$KUBECONFIG" rollout status deployment/${K8S_DEPLOYMENT_NAME} -n ${K8S_NAMESPACE}
-                        '''
-                    }
+
+                    sh '''
+                      echo "$PASS" | docker login -u "$USER" --password-stdin
+                      docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                      docker push ${DOCKER_IMAGE}:latest
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                withCredentials([
+                    file(credentialsId: 'k8s-config', variable: 'KUBECONFIG')
+                ]) {
+
+                    sh '''
+                      kubectl --kubeconfig=$KUBECONFIG \
+                        set image deployment/${K8S_DEPLOYMENT} \
+                        app=${DOCKER_IMAGE}:${DOCKER_TAG} \
+                        -n $K8S_NAMESPACE
+
+                      kubectl --kubeconfig=$KUBECONFIG \
+                        rollout status deployment/${K8S_DEPLOYMENT} \
+                        -n $K8S_NAMESPACE
+                    '''
                 }
             }
         }
     }
-    
+
     post {
         success {
-            echo 'Deployment successful!'
+            echo "✅ Deploy Success: ${DOCKER_IMAGE}:${DOCKER_TAG}"
         }
+
         failure {
-            echo 'Deployment failed!'
+            echo "❌ Deploy Failed"
         }
     }
 }
