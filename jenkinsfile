@@ -23,12 +23,10 @@ pipeline {
     // ---------------------------
     stage('Install & Build') {
       steps {
-        container('node') {
           sh '''
             npm install
             npm run build
           '''
-        }
       }
     }
 
